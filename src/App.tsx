@@ -16,6 +16,17 @@ const TITLES: Record<View, { title: string; sub: string }> = {
   movements: { title: "سجل الحركات", sub: "الوارد والصادر بالتاريخ والوقت" },
 };
 
+interface ResourceData {
+  name: string;
+  sku: string;
+  categoryId: string;
+  qty: number;
+  minQty: number;
+  unit: string;
+  price: number;
+  location: string;
+}
+
 function LiveClock() {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -48,18 +59,10 @@ function Shell() {
 
   /* ---- handlers ---- */
 
-  const openMove = (r: Resource, t: MovementType) => setModal({ kind: "move", resource: r, type: t });
+  const openMove = (r: Resource, t: MovementType) =>
+    setModal({ kind: "move", resource: r, type: t });
 
-  const saveResource = (data: {
-    name: string;
-    sku: string;
-    categoryId: string;
-    qty: number;
-    minQty: number;
-    unit: string;
-    price: number;
-    location: string;
-  }) => {
+  const saveResource = (data: ResourceData) => {
     if (modal?.kind === "resource" && modal.resource) {
       store.updateResource(modal.resource.id, data);
       notify("success", `تم حفظ تعديلات «${data.name}»`);
@@ -188,9 +191,7 @@ function Shell() {
           )}
 
           <footer className="mt-8 flex flex-wrap items-center justify-between gap-2 border-t border-linesoft pt-4 text-[11px] text-dim">
-            <span>
-              المُستودَع · بياناتك محفوظة محليًا في متصفحك ({kb} ك.ب)
-            </span>
+            <span>المُستودَع · بياناتك محفوظة محليًا في متصفحك ({kb} ك.ب)</span>
             <span className="tabular-nums">
               {fmt(store.resources.length)} صنف · {fmt(store.movements.length)} حركة مسجّلة
             </span>
@@ -200,7 +201,11 @@ function Shell() {
 
       {/* النوافذ */}
       {modal?.kind === "resource" && (
-        <ResourceModal resource={modal.resource} onSave={saveResource} onClose={() => setModal(null)} />
+        <ResourceModal
+          resource={modal.resource}
+          onSave={saveResource}
+          onClose={() => setModal(null)}
+        />
       )}
       {modal?.kind === "move" && (
         <MovementModal
@@ -211,7 +216,11 @@ function Shell() {
         />
       )}
       {modal?.kind === "delete" && (
-        <DeleteModal resource={modal.resource} onConfirm={confirmDelete} onClose={() => setModal(null)} />
+        <DeleteModal
+          resource={modal.resource}
+          onConfirm={confirmDelete}
+          onClose={() => setModal(null)}
+        />
       )}
     </div>
   );
