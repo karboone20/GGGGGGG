@@ -1,11 +1,27 @@
 import type { View } from "../types";
-import { AlertIcon, BoxesIcon, CrateIcon, PulseIcon, ResetIcon, SwapIcon } from "./icons";
+import { fmt } from "../lib/format";
+import {
+  AlertIcon,
+  BoxesIcon,
+  BuildingIcon,
+  CrateIcon,
+  PulseIcon,
+  ReceiptIcon,
+  ResetIcon,
+  SwapIcon,
+} from "./icons";
 
-const NAV: { id: View; label: string; icon: typeof PulseIcon; desc: string }[] = [
-  { id: "dashboard", label: "لوحة التحكم", icon: PulseIcon, desc: "نظرة شاملة" },
-  { id: "inventory", label: "المخزون", icon: BoxesIcon, desc: "الأصناف والكميات" },
-  { id: "movements", label: "الحركات", icon: SwapIcon, desc: "وارد وصادر" },
-];
+interface NavProps {
+  view: View;
+  setView: (v: View) => void;
+  itemCount: number;
+  lowCount: number;
+  todayMoves: number;
+  receiptsToday: number;
+  deptCount: number;
+  storageKB: number;
+  onReset: () => void;
+}
 
 export function Sidebar({
   view,
@@ -13,146 +29,148 @@ export function Sidebar({
   itemCount,
   lowCount,
   todayMoves,
+  receiptsToday,
+  deptCount,
   storageKB,
   onReset,
-}: {
-  view: View;
-  setView: (v: View) => void;
-  itemCount: number;
-  lowCount: number;
-  todayMoves: number;
-  storageKB: number;
-  onReset: () => void;
-}) {
-  const badge = (id: View) =>
-    id === "inventory" ? itemCount : id === "movements" ? todayMoves : lowCount;
+}: NavProps) {
+  const NAV: Array<{ id: View; label: string; icon: (p: { className?: string }) => React.ReactNode; count?: number; tint?: string }> = [
+    { id: "dashboard", label: "لوحة التحكم", icon: (p) => <PulseIcon {...p} /> },
+    {
+      id: "inventory",
+      label: "المخزون",
+      icon: (p) => <BoxesIcon {...p} />,
+      count: itemCount,
+    },
+    {
+      id: "movements",
+      label: "سجل الحركات",
+      icon: (p) => <SwapIcon {...p} />,
+      count: todayMoves,
+    },
+    {
+      id: "receipts",
+      label: "الوصولات الخارجة",
+      icon: (p) => <ReceiptIcon {...p} />,
+      count: receiptsToday,
+      tint: "#f0684f",
+    },
+    {
+      id: "departments",
+      label: "المصالح والأقسام",
+      icon: (p) => <BuildingIcon {...p} />,
+      count: deptCount,
+      tint: "#b78cf0",
+    },
+  ];
 
   return (
-    <aside className="fixed inset-y-0 right-0 z-40 hidden w-[264px] flex-col border-l border-line bg-surface/80 backdrop-blur-md lg:flex">
-      {/* الشعار */}
-      <div className="flex items-center gap-3 border-b border-line px-5 py-5">
-        <span className="grid size-11 place-items-center rounded-xl bg-saffron/15 text-saffron ring-1 ring-saffron/30">
-          <CrateIcon className="size-6" />
-        </span>
-        <div>
-          <p className="font-display text-2xl font-extrabold leading-6 text-fog">المُستودَع</p>
-          <p className="text-[11px] text-dim">نظام الموارد والمخزون</p>
+    <>
+      <aside className="fixed inset-y-0 right-0 z-40 hidden w-[264px] flex-col border-l border-line bg-surface/80 backdrop-blur-md lg:flex">
+        {/* الشعار */}
+        <div className="flex items-center gap-3 px-5 py-5">
+          <span className="relative grid size-11 place-items-center rounded-xl bg-gradient-to-br from-saffron to-[#d97f1f] text-ink shadow-lg shadow-saffron/25">
+            <CrateIcon className="size-6" strokeWidth={2} />
+            <span className="absolute -left-1 -top-1 size-2.5 rounded-full bg-mint ring-2 ring-surface animate-blink" />
+          </span>
+          <div>
+            <h1 className="font-display text-[22px] font-extrabold leading-6 text-fog">المُستودَع</h1>
+            <p className="text-[10.5px] font-semibold text-dim">إدارة الموارد والمخزون</p>
+          </div>
         </div>
-      </div>
 
-      {/* التنقل */}
-      <nav className="flex flex-col gap-1.5 px-3 py-4">
-        {NAV.map((n) => {
-          const active = view === n.id;
-          const Icon = n.icon;
-          return (
-            <button
-              key={n.id}
-              onClick={() => setView(n.id)}
-              className={`group relative flex items-center gap-3 rounded-xl border px-3.5 py-3 text-start transition-all duration-200 ${
-                active
-                  ? "border-saffron/35 bg-saffron/10 text-fog"
-                  : "border-transparent text-mist hover:border-line hover:bg-raised hover:text-fog"
-              }`}
-            >
-              <span
-                className={`absolute inset-y-2 right-0 w-[3px] rounded-full bg-saffron transition-all duration-300 ${
-                  active ? "opacity-100" : "opacity-0 -translate-x-1"
-                }`}
-              />
-              <Icon
-                className={`size-5 shrink-0 transition-colors ${active ? "text-saffron" : "text-dim group-hover:text-mist"}`}
-              />
-              <span className="flex-1">
-                <span className="block text-sm font-bold leading-4">{n.label}</span>
-                <span className="block text-[10.5px] text-dim">{n.desc}</span>
-              </span>
-              <span
-                className={`rounded-full px-2 py-0.5 text-[10.5px] font-bold tabular-nums ${
-                  active ? "bg-saffron/20 text-saffron" : "bg-lift text-mist"
+        {/* التنقل */}
+        <nav className="mt-1 flex flex-1 flex-col gap-1 px-3">
+          {NAV.map((item) => {
+            const active = view === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setView(item.id)}
+                className={`group flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-[13.5px] font-bold transition-all duration-200 ${
+                  active
+                    ? "bg-raised text-fog shadow-inner"
+                    : "text-mist hover:bg-raised/60 hover:text-fog"
                 }`}
               >
-                {badge(n.id)}
-              </span>
-            </button>
-          );
-        })}
-      </nav>
+                <span className={`relative transition-transform duration-200 ${active ? "" : "group-hover:-translate-x-0.5"}`}>
+                  {item.icon({ className: `size-[18px] ${active ? "text-saffron" : ""}` })}
+                </span>
+                <span className="flex-1 text-start">{item.label}</span>
+                {item.count !== undefined && (
+                  <span
+                    className={`rounded-md px-1.5 py-0.5 text-[10.5px] font-extrabold tabular-nums ${
+                      active ? "bg-saffron/15 text-saffron" : "bg-lift text-dim"
+                    }`}
+                    style={item.tint && item.count > 0 ? { color: item.tint, background: `${item.tint}18` } : undefined}
+                  >
+                    {fmt(item.count)}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
 
-      {/* تنبيه */}
-      <div className="mx-3 rounded-xl border border-coral/25 bg-coral/[0.07] p-3.5">
-        <div className="flex items-center gap-2 text-coral">
-          <AlertIcon className="size-4.5" />
-          <span className="text-xs font-bold">تنبيهات المخزون</span>
-        </div>
-        <p className="mt-1.5 text-[11.5px] leading-5 text-mist">
-          {lowCount > 0 ? (
-            <>
-              يوجد <b className="text-coral tabular-nums">{lowCount}</b>{" "}
-              {lowCount === 1 ? "صنف" : lowCount === 2 ? "صنفان" : "أصناف"} تحت الحد الأدنى ويحتاج
-              إلى تعويض.
-            </>
-          ) : (
-            "جميع الأصناف فوق الحد الأدنى. وضع ممتاز!"
-          )}
-        </p>
+        {/* تنبيه المخزون المنخفض */}
         {lowCount > 0 && (
-          <button
-            onClick={() => setView("inventory")}
-            className="mt-2 w-full rounded-lg border border-coral/40 bg-coral/15 py-1.5 text-[11.5px] font-bold text-coral transition-colors hover:bg-coral/25"
-          >
-            مراجعة الأصناف
-          </button>
+          <div className="mx-3 mb-3 rounded-xl border border-saffron/25 bg-saffron/8 p-3.5 animate-fadein">
+            <p className="flex items-center gap-2 text-[12px] font-extrabold text-saffron">
+              <AlertIcon className="size-4" />
+              {lowCount === 1 ? "صنف واحد تحت الحد" : `${lowCount} أصناف تحت الحد الأدنى`}
+            </p>
+            <p className="mt-1 text-[10.5px] font-semibold leading-4 text-mist">
+              راجع لوحة التحكم لجدول التعويض السريع
+            </p>
+          </div>
         )}
-      </div>
 
-      <div className="flex-1" />
-
-      {/* التخزين المحلي */}
-      <div className="border-t border-line px-5 py-4">
-        <div className="flex items-center justify-between text-[11px]">
-          <span className="font-semibold text-mist">التخزين المحلي</span>
-          <span className="tabular-nums text-dim">{storageKB} ك.ب</span>
+        {/* التخزين المحلي */}
+        <div className="border-t border-line px-5 py-4">
+          <div className="flex items-center justify-between text-[10.5px] font-bold text-dim">
+            <span>التخزين المحلي</span>
+            <span className="tabular-nums">{storageKB} ك.ب</span>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-raised">
+            <div
+              className="h-full rounded-full bg-gradient-to-l from-mint to-saffron transition-all duration-700"
+              style={{ width: `${Math.min(100, (storageKB / 512) * 100)}%` }}
+            />
+          </div>
+          <button
+            onClick={onReset}
+            className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-line py-1.5 text-[10.5px] font-bold text-dim transition-colors hover:border-coral/50 hover:text-coral"
+          >
+            <ResetIcon className="size-3.5" />
+            استعادة البيانات التجريبية
+          </button>
         </div>
-        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-lift">
-          <div
-            className="h-full rounded-full bg-gradient-to-l from-mint to-saffron transition-all duration-700"
-            style={{ width: `${Math.min(100, (storageKB / 64) * 100)}%` }}
-          />
-        </div>
-        <button
-          onClick={onReset}
-          className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-line py-1.5 text-[11px] font-semibold text-dim transition-colors hover:border-sky/40 hover:text-sky"
-        >
-          <ResetIcon className="size-3.5" />
-          استعادة البيانات التجريبية
-        </button>
-      </div>
-    </aside>
+      </aside>
+    </>
   );
 }
 
 export function MobileNav({ view, setView }: { view: View; setView: (v: View) => void }) {
+  const items: Array<{ id: View; label: string }> = [
+    { id: "dashboard", label: "الرئيسية" },
+    { id: "inventory", label: "المخزون" },
+    { id: "movements", label: "الحركات" },
+    { id: "receipts", label: "الوصولات" },
+    { id: "departments", label: "المصالح" },
+  ];
   return (
-    <div className="flex gap-2 overflow-x-auto px-4 pb-3 lg:hidden">
-      {NAV.map((n) => {
-        const Icon = n.icon;
-        const active = view === n.id;
-        return (
-          <button
-            key={n.id}
-            onClick={() => setView(n.id)}
-            className={`flex shrink-0 items-center gap-2 rounded-full border px-4 py-2 text-xs font-bold transition-colors ${
-              active
-                ? "border-saffron/40 bg-saffron/15 text-saffron"
-                : "border-line bg-surface text-mist"
-            }`}
-          >
-            <Icon className="size-4" />
-            {n.label}
-          </button>
-        );
-      })}
-    </div>
+    <nav className="flex gap-1 overflow-x-auto px-4 pb-2 lg:hidden">
+      {items.map((it) => (
+        <button
+          key={it.id}
+          onClick={() => setView(it.id)}
+          className={`shrink-0 rounded-lg px-3.5 py-1.5 text-[12px] font-bold transition-colors ${
+            view === it.id ? "bg-saffron/15 text-saffron" : "text-mist hover:text-fog"
+          }`}
+        >
+          {it.label}
+        </button>
+      ))}
+    </nav>
   );
 }

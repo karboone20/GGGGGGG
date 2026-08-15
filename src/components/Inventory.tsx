@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
-import type { MovementType, Resource, StockStatus } from "../types";
-import { CATEGORIES, catById, stockStatus } from "../data";
-import { fmt, money, relTime } from "../lib/format";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { Category, MovementType, Resource, StockStatus } from "../types";
+import { statusOf, STATUS_META } from "../data";
+import { fmt, money } from "../lib/format";
 import { StatusBadge } from "./ui";
 import {
   ArrowInIcon,
@@ -15,266 +15,262 @@ import {
   TrashIcon,
 } from "./icons";
 
-type SortKey = "name" | "qtyAsc" | "qtyDesc" | "valueDesc" | "recent";
-
-const SORTS: { id: SortKey; label: string }[] = [
-  { id: "recent", label: "الأحدث تحديثًا" },
-  { id: "name", label: "الاسم (أ - ي)" },
-  { id: "qtyAsc", label: "الكمية: الأقل أولًا" },
-  { id: "qtyDesc", label: "الكمية: الأكثر أولًا" },
-  { id: "valueDesc", label: "القيمة: الأعلى أولًا" },
-];
+type SortKey = "name" | "qty" | "value" | "updated";
 
 export function Inventory({
   resources,
+  categories,
+  initialDept,
   onMove,
   onEdit,
   onDelete,
   onAdd,
 }: {
   resources: Resource[];
+  categories: Category[];
+  initialDept?: string;
   onMove: (r: Resource, t: MovementType) => void;
   onEdit: (r: Resource) => void;
   onDelete: (r: Resource) => void;
   onAdd: () => void;
 }) {
-  const [query, setQuery] = useState("");
-  const [cat, setCat] = useState<string>("all");
+  const [q, setQ] = useState("");
+  const [cat, setCat] = useState(initialDept ?? "all");
   const [status, setStatus] = useState<"all" | StockStatus>("all");
-  const [sort, setSort] = useState<SortKey>("recent");
+  const [sort, setSort] = useState<SortKey>("updated");
+  const [flashId, setFlashId] = useState<string | null>(null);
+  const prevRef = useRef<Map<string, number>>(new Map(resources.map((r) => [r.id, r.updatedAt])));
+
+  useEffect(() => {
+    for (const r of resources) {
+      const prev = prevRef.current.get(r.id);
+      if (prev !== undefined && prev !== r.updatedAt) {
+        setFlashId(r.id);
+        const t = window.setTimeout(() => setFlashId(null), 1700);
+        prevRef.current = new Map(resources.map((x) => [x.id, x.updatedAt]));
+        return () => window.clearTimeout(t);
+      }
+    }
+    prevRef.current = new Map(resources.map((x) => [x.id, x.updatedAt]));
+  }, [resources]);
+
+  useEffect(() => {
+    if (initialDept) setCat(initialDept);
+  }, [initialDept]);
+
+  const catById = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    let list = resources.filter((r) => {
-      if (q && ![r.name, r.sku, r.location].some((f) => f.toLowerCase().includes(q))) return false;
+    const term = q.trim().toLowerCase();
+    const list = resources.filter((r) => {
       if (cat !== "all" && r.categoryId !== cat) return false;
-      if (status !== "all" && stockStatus(r) !== status) return false;
+      if (status !== "all" && statusOf(r) !== status) return false;
+      if (
+        term &&
+        !r.name.toLowerCase().includes(term) &&
+        !r.sku.toLowerCase().includes(term) &&
+        !r.location.toLowerCase().includes(term)
+      )
+        return false;
       return true;
     });
-    list = [...list];
     switch (sort) {
       case "name":
-        list.sort((a, b) => a.name.localeCompare(b.name, "ar"));
-        break;
-      case "qtyAsc":
-        list.sort((a, b) => a.qty - b.qty);
-        break;
-      case "qtyDesc":
-        list.sort((a, b) => b.qty - a.qty);
-        break;
-      case "valueDesc":
-        list.sort((a, b) => b.qty * b.price - a.qty * a.price);
-        break;
+        return list.sort((a, b) => a.name.localeCompare(b.name, "ar"));
+      case "qty":
+        return list.sort((a, b) => a.qty - b.qty);
+      case "value":
+        return list.sort((a, b) => b.qty * b.price - a.qty * a.price);
       default:
-        list.sort((a, b) => b.updatedAt - a.updatedAt);
+        return list.sort((a, b) => b.updatedAt - a.updatedAt);
     }
-    return list;
-  }, [resources, query, cat, status, sort]);
+  }, [resources, q, cat, status, sort]);
 
-  const statusCount = (s: "all" | StockStatus) =>
-    s === "all" ? resources.length : resources.filter((r) => stockStatus(r) === s).length;
-
-  const statusTabs: { id: "all" | StockStatus; label: string; tint: string }[] = [
-    { id: "all", label: "الكل", tint: "#9db6a9" },
-    { id: "ok", label: "متوفر", tint: "#3fd68f" },
-    { id: "low", label: "منخفض", tint: "#f0a63c" },
-    { id: "out", label: "نفد", tint: "#f0684f" },
-  ];
-
-  const hasFilters = query !== "" || cat !== "all" || status !== "all";
+  const totalValue = filtered.reduce((a, r) => a + r.qty * r.price, 0);
+  const catColor = cat !== "all" ? catById.get(cat)?.color : undefined;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 animate-rise">
       {/* شريط الأدوات */}
-      <div className="panel animate-rise p-4" style={{ animationDelay: "40ms" }}>
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative min-w-[220px] flex-1">
-              <SearchIcon className="pointer-events-none absolute right-3.5 top-1/2 size-4 -translate-y-1/2 text-dim" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="ابحث بالاسم أو الرمز أو الموقع…"
-                className="field !py-2.5 !pe-10"
-              />
-            </div>
-            <div className="relative">
-              <FilterIcon className="pointer-events-none absolute right-3.5 top-1/2 size-4 -translate-y-1/2 text-dim" />
-              <select
-                value={sort}
-                onChange={(e) => setSort(e.target.value as SortKey)}
-                className="field !w-auto !py-2.5 !pe-10"
-              >
-                {SORTS.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <button
-              onClick={onAdd}
-              className="flex items-center gap-2 rounded-xl bg-saffron px-4 py-2.5 text-sm font-extrabold text-ink shadow-lg shadow-saffron/20 transition-all hover:-translate-y-0.5 hover:bg-[#f7b455] active:translate-y-0"
-            >
-              <PlusIcon className="size-4" strokeWidth={2.4} />
-              صنف جديد
-            </button>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {statusTabs.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setStatus(t.id)}
-                className={`rounded-full border px-3.5 py-1.5 text-[11.5px] font-bold transition-all ${
-                  status === t.id ? "scale-105" : "opacity-75 hover:opacity-100"
-                }`}
-                style={{
-                  color: t.tint,
-                  borderColor: status === t.id ? `${t.tint}66` : "var(--color-line)",
-                  background: status === t.id ? `${t.tint}16` : "transparent",
-                }}
-              >
-                {t.label}
-                <span className="ms-1.5 tabular-nums opacity-70">{statusCount(t.id)}</span>
-              </button>
-            ))}
-            <span className="mx-1 hidden h-4 w-px bg-line sm:block" />
-            <button
-              onClick={() => setCat("all")}
-              className={`rounded-full border px-3 py-1.5 text-[11.5px] font-bold transition-colors ${
-                cat === "all"
-                  ? "border-fog/40 bg-fog/10 text-fog"
-                  : "border-line text-dim hover:text-mist"
-              }`}
-            >
-              كل الفئات
-            </button>
-            {CATEGORIES.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => setCat(cat === c.id ? "all" : c.id)}
-                className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11.5px] font-bold transition-all ${
-                  cat === c.id ? "scale-105" : "opacity-75 hover:opacity-100"
-                }`}
-                style={{
-                  color: c.color,
-                  borderColor: cat === c.id ? `${c.color}66` : "var(--color-line)",
-                  background: cat === c.id ? `${c.color}14` : "transparent",
-                }}
-              >
-                <span className="size-2 rounded-full" style={{ background: c.color }} />
-                {c.name}
-              </button>
-            ))}
-          </div>
+      <div className="panel flex flex-wrap items-center gap-2.5 p-3.5">
+        <div className="relative min-w-[220px] flex-1">
+          <SearchIcon className="pointer-events-none absolute right-3.5 top-1/2 size-4 -translate-y-1/2 text-dim" />
+          <input
+            className="field pr-10"
+            placeholder="ابحث بالاسم أو الرمز أو الموقع…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
         </div>
+        <select className="field w-auto min-w-[170px]" value={cat} onChange={(e) => setCat(e.target.value)}>
+          <option value="all">كل الأقسام ({categories.length})</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+        <select
+          className="field w-auto min-w-[130px]"
+          value={status}
+          onChange={(e) => setStatus(e.target.value as "all" | StockStatus)}
+        >
+          <option value="all">كل الحالات</option>
+          <option value="ok">متوفر</option>
+          <option value="low">منخفض</option>
+          <option value="out">نفد</option>
+        </select>
+        <select className="field w-auto min-w-[150px]" value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
+          <option value="updated">الأحدث تحديثًا</option>
+          <option value="name">الاسم (أ-ي)</option>
+          <option value="qty">الأقل كمية</option>
+          <option value="value">الأعلى قيمة</option>
+        </select>
+      </div>
+
+      {/* ملخص */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-[12px] font-semibold text-dim">
+        <span className="flex items-center gap-2">
+          <FilterIcon className="size-3.5" />
+          <b className="tabular-nums text-mist">{fmt(filtered.length)}</b> صنف معروض من{" "}
+          <b className="tabular-nums text-mist">{fmt(resources.length)}</b>
+          {cat !== "all" && (
+            <span
+              className="rounded-full px-2 py-0.5 text-[10.5px] font-bold"
+              style={{ color: catColor, background: `${catColor}18` }}
+            >
+              {catById.get(cat)?.name}
+            </span>
+          )}
+        </span>
+        <span>
+          القيمة الإجمالية: <b className="tabular-nums text-mint">{money(totalValue)}</b>
+        </span>
       </div>
 
       {/* الجدول */}
-      <div className="panel animate-rise overflow-hidden" style={{ animationDelay: "120ms" }}>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[880px] text-start">
+      {filtered.length === 0 ? (
+        <div className="panel grid place-items-center px-6 py-16 text-center">
+          <span className="grid size-16 place-items-center rounded-2xl border border-dashed border-line text-dim">
+            <EmptyIcon className="size-8" />
+          </span>
+          <h3 className="mt-4 font-display text-xl font-bold text-fog">لا أصناف مطابقة</h3>
+          <p className="mt-1 text-[13px] text-mist">جرّب تعديل البحث أو الفلاتر، أو أضف صنفًا جديدًا.</p>
+          <button
+            onClick={onAdd}
+            className="mt-5 flex items-center gap-2 rounded-xl bg-saffron px-4 py-2.5 text-[13px] font-extrabold text-ink transition-transform hover:-translate-y-0.5"
+          >
+            <PlusIcon className="size-4" strokeWidth={2.4} />
+            إضافة مورد
+          </button>
+        </div>
+      ) : (
+        <div className="panel overflow-x-auto">
+          <table className="w-full min-w-[960px] text-start">
             <thead>
-              <tr className="border-b border-line bg-raised/60 text-[11px] font-bold text-dim">
-                <th className="px-5 py-3 text-start">الصنف</th>
-                <th className="px-3 py-3 text-start">الفئة</th>
-                <th className="px-3 py-3 text-start">الموقع</th>
-                <th className="px-3 py-3 text-start">الكمية</th>
-                <th className="px-3 py-3 text-start">سعر الوحدة</th>
-                <th className="px-3 py-3 text-start">القيمة</th>
-                <th className="px-3 py-3 text-start">الحالة</th>
-                <th className="px-5 py-3 text-end">إجراءات</th>
+              <tr className="border-b border-line text-[11px] font-bold text-dim">
+                <th className="px-4 py-3 text-start font-bold">الصنف</th>
+                <th className="px-3 py-3 text-start font-bold">القسم</th>
+                <th className="px-3 py-3 text-start font-bold">الكمية</th>
+                <th className="px-3 py-3 text-start font-bold">سعر الوحدة</th>
+                <th className="px-3 py-3 text-start font-bold">القيمة</th>
+                <th className="px-3 py-3 text-start font-bold">الحالة</th>
+                <th className="px-3 py-3 text-start font-bold">الموقع</th>
+                <th className="px-4 py-3 text-end font-bold">إجراءات</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((r) => {
-                const c = catById(r.categoryId);
-                const st = stockStatus(r);
-                const ratio = r.minQty > 0 ? Math.min(1, r.qty / (r.minQty * 3)) : 1;
+                const c = catById.get(r.categoryId);
+                const st = statusOf(r);
+                const meta = STATUS_META[st];
+                const ratio = r.minQty > 0 ? Math.min(1, r.qty / (r.minQty * 4)) : 1;
                 return (
                   <tr
-                    key={`${r.id}-${r.updatedAt}`}
-                    className="group animate-flash border-b border-linesoft transition-colors last:border-0 hover:bg-raised/50"
+                    key={r.id}
+                    className={`group border-b border-linesoft transition-colors last:border-0 hover:bg-raised/70 ${
+                      flashId === r.id ? "animate-flash" : ""
+                    }`}
                   >
-                    <td className="px-5 py-3.5">
-                      <p className="text-[13.5px] font-bold text-fog transition-colors group-hover:text-saffron">
-                        {r.name}
-                      </p>
-                      <p className="mt-0.5 text-[10.5px] tracking-wide text-dim" dir="ltr">
-                        {r.sku} · حُدّث {relTime(r.updatedAt)}
-                      </p>
-                    </td>
-                    <td className="px-3 py-3.5">
-                      <span
-                        className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold"
-                        style={{ color: c.color, borderColor: `${c.color}44`, background: `${c.color}10` }}
-                      >
-                        <span className="size-1.5 rounded-full" style={{ background: c.color }} />
-                        {c.name}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3.5">
-                      <span className="flex items-center gap-1.5 text-[12px] font-semibold text-mist">
-                        <PinIcon className="size-3.5 text-dim" />
-                        <span dir="ltr">{r.location}</span>
-                      </span>
-                    </td>
-                    <td className="px-3 py-3.5">
-                      <div className="flex items-center gap-2.5">
-                        <span className="font-display text-lg font-extrabold tabular-nums text-fog">
-                          {fmt(r.qty)}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <span
+                          className="grid size-9 shrink-0 place-items-center rounded-lg font-display text-[11px] font-extrabold"
+                          style={{
+                            color: c?.color ?? "#9db6a9",
+                            background: `${c?.color ?? "#9db6a9"}14`,
+                          }}
+                        >
+                          {c?.skuPrefix ?? "؟"}
                         </span>
-                        <span className="text-[10.5px] text-dim">{r.unit}</span>
-                        <div className="h-1.5 w-14 overflow-hidden rounded-full bg-lift">
-                          <div
-                            className="h-full rounded-full transition-all duration-700"
-                            style={{
-                              width: `${Math.max(4, ratio * 100)}%`,
-                              background:
-                                st === "out" ? "#f0684f" : st === "low" ? "#f0a63c" : "#3fd68f",
-                            }}
-                          />
+                        <div>
+                          <div className="text-[13.5px] font-bold leading-5 text-fog">{r.name}</div>
+                          <div className="text-[10.5px] font-semibold tabular-nums text-dim" dir="ltr">
+                            {r.sku}
+                          </div>
                         </div>
                       </div>
-                      <p className="mt-0.5 text-[10px] text-dim">الحد الأدنى {r.minQty}</p>
                     </td>
-                    <td className="px-3 py-3.5 text-[12.5px] font-semibold tabular-nums text-mist">
-                      {money(r.price)}
+                    <td className="px-3 py-3">
+                      <span
+                        className="inline-block rounded-full px-2.5 py-1 text-[10.5px] font-bold"
+                        style={{ color: c?.color ?? "#9db6a9", background: `${c?.color ?? "#9db6a9"}14` }}
+                      >
+                        {c?.name ?? "بدون قسم"}
+                      </span>
                     </td>
-                    <td className="px-3 py-3.5 text-[12.5px] font-extrabold tabular-nums text-saffron">
-                      {money(r.qty * r.price)}
+                    <td className="px-3 py-3">
+                      <div className="font-display text-[15px] font-extrabold tabular-nums text-fog">
+                        {fmt(r.qty)}
+                        <span className="ms-1 text-[10px] font-bold text-dim">{r.unit}</span>
+                      </div>
+                      <div className="mt-1.5 h-1 w-24 overflow-hidden rounded-full bg-ink">
+                        <div
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{ width: `${Math.max(ratio * 100, 2)}%`, background: meta.color }}
+                        />
+                      </div>
+                      <div className="mt-1 text-[9.5px] font-semibold text-dim">الحد الأدنى: {fmt(r.minQty)}</div>
                     </td>
-                    <td className="px-3 py-3.5">
+                    <td className="px-3 py-3 text-[12.5px] font-semibold tabular-nums text-mist">{money(r.price)}</td>
+                    <td className="px-3 py-3 text-[13px] font-bold tabular-nums text-mint">{money(r.qty * r.price)}</td>
+                    <td className="px-3 py-3">
                       <StatusBadge status={st} />
                     </td>
-                    <td className="px-5 py-3.5">
+                    <td className="px-3 py-3">
+                      <span className="flex items-center gap-1 text-[11.5px] font-semibold text-mist">
+                        <PinIcon className="size-3.5 text-dim" />
+                        {r.location}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1.5 opacity-70 transition-opacity group-hover:opacity-100">
                         <button
                           onClick={() => onMove(r, "in")}
-                          title="إيداع كمية"
-                          className="grid size-8 place-items-center rounded-lg border border-mint/35 text-mint transition-all hover:scale-110 hover:bg-mint/15"
+                          title="إيداع وارد"
+                          className="grid size-8 place-items-center rounded-lg border border-line text-mint transition-all hover:-translate-y-0.5 hover:border-mint/60 hover:bg-mint/10"
                         >
                           <ArrowInIcon className="size-4" />
                         </button>
                         <button
                           onClick={() => onMove(r, "out")}
-                          title="سحب كمية"
-                          className="grid size-8 place-items-center rounded-lg border border-coral/35 text-coral transition-all hover:scale-110 hover:bg-coral/15"
+                          disabled={r.qty === 0}
+                          title={r.qty === 0 ? "المخزون نافد" : "صرف صادر"}
+                          className="grid size-8 place-items-center rounded-lg border border-line text-coral transition-all hover:-translate-y-0.5 hover:border-coral/60 hover:bg-coral/10 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:translate-y-0"
                         >
                           <ArrowOutIcon className="size-4" />
                         </button>
                         <button
                           onClick={() => onEdit(r)}
                           title="تعديل"
-                          className="grid size-8 place-items-center rounded-lg border border-sky/35 text-sky transition-all hover:scale-110 hover:bg-sky/15"
+                          className="grid size-8 place-items-center rounded-lg border border-line text-mist transition-all hover:-translate-y-0.5 hover:border-saffron/60 hover:text-saffron"
                         >
                           <PencilIcon className="size-4" />
                         </button>
                         <button
                           onClick={() => onDelete(r)}
                           title="حذف"
-                          className="grid size-8 place-items-center rounded-lg border border-line text-dim transition-all hover:scale-110 hover:border-coral/50 hover:text-coral"
+                          className="grid size-8 place-items-center rounded-lg border border-line text-mist transition-all hover:-translate-y-0.5 hover:border-coral/60 hover:text-coral"
                         >
                           <TrashIcon className="size-4" />
                         </button>
@@ -286,52 +282,7 @@ export function Inventory({
             </tbody>
           </table>
         </div>
-
-        {filtered.length === 0 && (
-          <div className="flex flex-col items-center gap-3 px-6 py-14 text-center animate-fadein">
-            <span className="grid size-16 place-items-center rounded-2xl border border-dashed border-line text-dim">
-              <EmptyIcon className="size-8" />
-            </span>
-            {resources.length === 0 ? (
-              <>
-                <p className="font-display text-lg font-bold text-fog">المستودع فارغ</p>
-                <p className="max-w-xs text-[12.5px] text-mist">
-                  ابدأ بإضافة أول صنف لتتبّع الكميات والقيم والحركات.
-                </p>
-                <button
-                  onClick={onAdd}
-                  className="mt-1 flex items-center gap-2 rounded-xl bg-saffron px-4 py-2 text-sm font-extrabold text-ink transition-transform hover:-translate-y-0.5"
-                >
-                  <PlusIcon className="size-4" strokeWidth={2.4} />
-                  إضافة أول صنف
-                </button>
-              </>
-            ) : (
-              <>
-                <p className="font-display text-lg font-bold text-fog">لا توجد نتائج مطابقة</p>
-                <p className="text-[12.5px] text-mist">جرّب تعديل البحث أو الفلاتر.</p>
-                {hasFilters && (
-                  <button
-                    onClick={() => {
-                      setQuery("");
-                      setCat("all");
-                      setStatus("all");
-                    }}
-                    className="rounded-lg border border-line px-3 py-1.5 text-[12px] font-bold text-mist transition-colors hover:border-saffron/40 hover:text-saffron"
-                  >
-                    مسح الفلاتر
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-        )}
-      </div>
-
-      <p className="text-center text-[11px] text-dim animate-fadein" style={{ animationDelay: "200ms" }}>
-        عرض <b className="text-mist tabular-nums">{filtered.length}</b> من{" "}
-        <b className="text-mist tabular-nums">{resources.length}</b> صنف
-      </p>
+      )}
     </div>
   );
 }

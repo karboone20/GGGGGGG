@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Movement, MovementType, Resource } from "../types";
-import { CATEGORIES, catById, stockStatus } from "../data";
+import type { Category, Movement, MovementType, Resource } from "../types";
+import { statusOf } from "../data";
 import { fmt, money, relTime } from "../lib/format";
 import { StatusBadge, useCountUp } from "./ui";
 import {
@@ -119,6 +119,7 @@ function AlertTicker({ items }: { items: Resource[] }) {
 export function Dashboard({
   resources,
   movements,
+  categories,
   onMove,
   onAdd,
   goInventory,
@@ -126,15 +127,17 @@ export function Dashboard({
 }: {
   resources: Resource[];
   movements: Movement[];
+  categories: Category[];
   onMove: (r: Resource, t: MovementType) => void;
   onAdd: () => void;
   goInventory: () => void;
   goMovements: () => void;
 }) {
+  const catMap = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
   const stats = useMemo(() => {
     const totalUnits = resources.reduce((s, r) => s + r.qty, 0);
     const totalValue = resources.reduce((s, r) => s + r.qty * r.price, 0);
-    const low = resources.filter((r) => stockStatus(r) !== "ok");
+    const low = resources.filter((r) => statusOf(r) !== "ok");
     const ok = resources.length - low.length;
     const cutoff = Date.now() - 14 * D;
     const recent = movements.filter((m) => m.at >= cutoff);
@@ -155,7 +158,7 @@ export function Dashboard({
       };
     });
 
-    const catDist = CATEGORIES.map((c) => ({
+    const catDist = categories.map((c) => ({
       ...c,
       units: resources.filter((r) => r.categoryId === c.id).reduce((s, r) => s + r.qty, 0),
       count: resources.filter((r) => r.categoryId === c.id).length,
@@ -171,7 +174,7 @@ export function Dashboard({
       catDist,
       health: resources.length ? Math.round((ok / resources.length) * 100) : 100,
     };
-  }, [resources, movements]);
+  }, [resources, movements, categories]);
 
   const units = useCountUp(stats.totalUnits);
   const value = useCountUp(stats.totalValue);
@@ -179,7 +182,7 @@ export function Dashboard({
   const maxCat = Math.max(1, ...stats.catDist.map((c) => c.units));
 
   const kpis = [
-    { label: "إجمالي الأصناف", val: fmt(resources.length), icon: BoxesIcon, tint: "#58b0ee", sub: `${stats.catDist.filter((c) => c.count > 0).length} فئات نشطة` },
+    { label: "إجمالي الأصناف", val: fmt(resources.length), icon: BoxesIcon, tint: "#58b0ee", sub: `${stats.catDist.filter((c) => c.count > 0).length} أقسام نشطة` },
     { label: "قيمة المخزون", val: money(value), icon: CoinIcon, tint: "#f0a63c", sub: "بسعر الوحدة الحالي" },
     { label: "وارد 14 يوم", val: `+${fmt(stats.inSum)}`, icon: ArrowInIcon, tint: "#3fd68f", sub: "وحدة دخلت المستودع" },
     { label: "صادر 14 يوم", val: `−${fmt(stats.outSum)}`, icon: ArrowOutIcon, tint: "#f0684f", sub: "وحدة صُرفت" },
@@ -353,7 +356,7 @@ export function Dashboard({
               <p className="p-6 text-center text-sm text-dim">لا توجد أصناف منخفضة — ممتاز!</p>
             )}
             {stats.low.slice(0, 5).map((r) => {
-              const st = stockStatus(r);
+              const st = statusOf(r);
               return (
                 <div
                   key={r.id}
@@ -363,7 +366,7 @@ export function Dashboard({
                     <p className="truncate text-[13px] font-bold text-fog">{r.name}</p>
                     <p className="mt-0.5 text-[11px] tabular-nums text-dim">
                       المتبقي <b className={st === "out" ? "text-coral" : "text-saffron"}>{r.qty}</b> من
-                      حد أدنى {r.minQty} · {catById(r.categoryId).name}
+                      حد أدنى {r.minQty} · {catMap.get(r.categoryId)?.name ?? "غير مصنف"}
                     </p>
                   </div>
                   <StatusBadge status={st} />
