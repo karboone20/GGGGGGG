@@ -35,6 +35,11 @@ import {
   UploadIcon,
 } from "./components/icons";
 
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+}
+
 const TITLES: Record<View, { title: string; sub: string }> = {
   dashboard: { title: "لوحة التحكم", sub: "نبض المستودع لحظة بلحظة" },
   inventory: { title: "المخزون", sub: "كل الأصناف والكميات والقيم" },
@@ -70,6 +75,31 @@ function Shell() {
   const [inventoryDept, setInventoryDept] = useState<string | undefined>(undefined);
   const [exportOpen, setExportOpen] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
+  const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null);
+
+  useEffect(() => {
+    const onBip = (e: Event) => {
+      e.preventDefault();
+      setInstallEvt(e as BeforeInstallPromptEvent);
+    };
+    const onInstalled = () => setInstallEvt(null);
+    window.addEventListener("beforeinstallprompt", onBip);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBip);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
+  }, []);
+
+  const installApp = async () => {
+    if (!installEvt) return;
+    await installEvt.prompt();
+    const { outcome } = await installEvt.userChoice;
+    if (outcome === "accepted") {
+      notify("success", "تم تثبيت «المُستودَع» على جهازك — ستجده في قائمة التطبيقات");
+      setInstallEvt(null);
+    }
+  };
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
@@ -271,6 +301,16 @@ function Shell() {
               </div>
             </div>
             <div className="flex items-center gap-2.5">
+              {installEvt && (
+                <button
+                  onClick={installApp}
+                  title="ثبّت التطبيق على جهازك"
+                  className="hidden items-center gap-2 rounded-xl border border-mint/35 bg-mint/10 px-3.5 py-2.5 text-[12.5px] font-extrabold text-mint transition-all hover:-translate-y-0.5 hover:bg-mint/20 active:translate-y-0 sm:flex animate-pop"
+                >
+                  <DownloadIcon className="size-4" strokeWidth={2.2} />
+                  تثبيت التطبيق
+                </button>
+              )}
               <LiveClock />
               <button
                 onClick={() => setModal({ kind: "resource" })}

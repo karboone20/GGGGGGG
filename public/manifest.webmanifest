@@ -1,0 +1,17 @@
+{
+  "name": "المُستودَع — نظام إدارة الموارد والمخزون",
+  "short_name": "المُستودَع",
+  "description": "نظام عربي متكامل لإدارة المخزون: الأقسام، الأصناف، الوصولات الخارجة، الوارد والصادر — مع حفظ محلي وعمل دون اتصال.",
+  "dir": "rtl",
+  "lang": "ar",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b1411",
+  "theme_color": "#0b1411",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}
